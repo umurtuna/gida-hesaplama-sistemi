@@ -2,20 +2,22 @@ import json
 
 class GidaYonetimi:
     def __init__(self):
-        self.veritabani_dosyasi = "malzemeler.json"
+        self.malzeme_dosyasi = "malzemeler.json"
+        self.recete_dosyasi = "receteler.json"
         self.kurlar = {"TL": 1.0, "USD": 32.5, "EUR": 35.0} 
-        self.malzemeler = self.verileri_yukle()
+        self.malzemeler = self.verileri_yukle(self.malzeme_dosyasi)
+        self.receteler = self.verileri_yukle(self.recete_dosyasi)
 
-    def verileri_yukle(self):
+    def verileri_yukle(self, dosya_adi):
         try:
-            with open(self.veritabani_dosyasi, "r", encoding="utf-8") as f:
+            with open(dosya_adi, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
             return {}
 
-    def verileri_kaydet(self):
-        with open(self.veritabani_dosyasi, "w", encoding="utf-8") as f:
-            json.dump(self.malzemeler, f, ensure_ascii=False, indent=4)
+    def verileri_kaydet(self, veri, dosya_adi):
+        with open(dosya_adi, "w", encoding="utf-8") as f:
+            json.dump(veri, f, ensure_ascii=False, indent=4)
 
     def kur_guncelle(self):
         print("\n--- DÖVİZ KURU GÜNCELLEME ---")
@@ -24,115 +26,132 @@ class GidaYonetimi:
             self.kurlar["EUR"] = float(input("1 EUR kaç TL? : "))
             print("Kurlar başarıyla güncellendi!")
         except ValueError:
-            print("Hata: Lütfen geçerli bir sayı girin.")
+            print("Hata: Geçerli bir sayı girin.")
 
     def veri_girisi(self, isim):
-        """Besin ve maliyet verilerini kullanıcıdan alan yardımcı fonksiyon"""
-        print(f"\n--- {isim.upper()} İÇİN BİLGİLERİ GİRİN ---")
-        print("Besin Değerleri (100g/ml için):")
-        enerji = float(input("- Enerji (kcal): "))
+        print(f"\n--- {isim.upper()} BİLGİ GİRİŞİ ---")
+        enerji = float(input("- Enerji (kcal/100g): "))
         yag = float(input("- Yağ (g): "))
         karb = float(input("- Karbonhidrat (g): "))
         seker = float(input("  - Şeker (g): "))
         lif = float(input("- Lif (g): "))
         protein = float(input("- Protein (g): "))
         tuz = float(input("- Tuz (g): "))
-        
-        print("\nMaliyet Bilgisi:")
-        birim_fiyat = float(input("- Fiyat: "))
+        birim_fiyat = float(input("- Birim Fiyat (1 kg/lt için): "))
         birim = input("- Para Birimi (TL/USD/EUR): ").upper()
         
         return {
-            "besin": {
-                "enerji": enerji, "yag": yag, "karb": karb,
-                "seker": seker, "lif": lif, "protein": protein, "tuz": tuz
-            },
-            "maliyet": {
-                "fiyat": birim_fiyat,
-                "birim": birim
-            }
+            "besin": {"enerji": enerji, "yag": yag, "karb": karb, "seker": seker, "lif": lif, "protein": protein, "tuz": tuz},
+            "maliyet": {"fiyat": birim_fiyat, "birim": birim}
         }
 
     def malzeme_ekle(self):
-        print("\n--- YENİ MALZEME EKLEME ---")
-        isim = input("Malzeme adı: ").strip().lower()
+        isim = input("Yeni Malzeme Adı: ").strip().lower()
         if isim in self.malzemeler:
-            print(f"Hata: '{isim}' zaten kayıtlı. Düzenlemek için 'Düzenle' seçeneğini kullanın.")
+            print("Bu malzeme zaten var.")
             return
-        
         self.malzemeler[isim] = self.veri_girisi(isim)
-        self.verileri_kaydet()
-        print(f"'{isim}' başarıyla listeye eklendi.")
+        self.verileri_kaydet(self.malzemeler, self.malzeme_dosyasi)
 
     def malzeme_duzenle(self):
-        print("\n--- MALZEME DÜZENLEME ---")
-        if not self.malzemeler:
-            print("Düzenlenecek malzeme bulunamadı.")
-            return
-
-        print("Mevcut Malzemeler:", ", ".join(self.malzemeler.keys()))
-        hedef = input("Düzenlemek istediğiniz malzemenin tam adını yazın: ").strip().lower()
-
+        print("Mevcutlar:", ", ".join(self.malzemeler.keys()))
+        hedef = input("Düzenlenecek malzeme: ").strip().lower()
         if hedef in self.malzemeler:
-            print(f"'{hedef}' güncelleniyor. Yeni değerleri girin:")
             self.malzemeler[hedef] = self.veri_girisi(hedef)
-            self.verileri_kaydet()
-            print(f"'{hedef}' başarıyla güncellendi.")
+            self.verileri_kaydet(self.malzemeler, self.malzeme_dosyasi)
         else:
-            print("Hata: Bu isimde bir malzeme bulunamadı.")
+            print("Malzeme bulunamadı.")
+
+    def recete_olustur(self):
+        print("\n--- YENİ REÇETE OLUŞTURMA ---")
+        if not self.malzemeler:
+            print("Önce malzeme eklemelisiniz!")
+            return
+        
+        recete_adi = input("Reçete (Ürün) Adı: ").strip()
+        icerik = []
+        toplam_gramaj = 0
+        
+        while True:
+            print("\nMalzemeler:", ", ".join(self.malzemeler.keys()))
+            m_adi = input("Eklenecek malzeme (Bitirmek için 'tamam' yazın): ").lower()
+            if m_adi == 'tamam': break
+            
+            if m_adi in self.malzemeler:
+                miktar = float(input(f"{m_adi} miktar (gram/ml): "))
+                icerik.append({"isim": m_adi, "miktar": miktar})
+                toplam_gramaj += miktar
+            else:
+                print("Malzeme listede yok!")
+
+        if icerik:
+            self.receteler[recete_adi] = {"icerik": icerik, "toplam_gramaj": toplam_gramaj}
+            self.verileri_kaydet(self.receteler, self.recete_dosyasi)
+            print(f"'{recete_adi}' reçetesi kaydedildi.")
+
+    def recete_goruntule(self):
+        if not self.receteler:
+            print("\nHenüz kayıtlı reçete yok.")
+            return
+        
+        print("\n--- KAYITLI REÇETELER ---")
+        liste = list(self.receteler.keys())
+        for i, ad in enumerate(liste, 1):
+            print(f"{i}. {ad}")
+        
+        try:
+            secim = int(input("\nDetayını görmek istediğiniz numara (Geri için 0): "))
+            if secim == 0: return
+            
+            ad = liste[secim-1]
+            r = self.receteler[ad]
+            
+            print(f"\n--- {ad.upper()} ANALİZİ ---")
+            t_enerji, t_seker, t_maliyet = 0, 0, 0
+            
+            for madde in r["icerik"]:
+                m_veri = self.malzemeler[madde['isim']]
+                oran = madde['miktar'] / 100
+                t_enerji += m_veri["besin"]["enerji"] * oran
+                t_seker += m_veri["besin"]["seker"] * oran
+                
+                birim_maliyet = m_veri["maliyet"]["fiyat"] * self.kurlar.get(m_veri["maliyet"]["birim"], 1.0)
+                t_maliyet += (birim_maliyet / 1000) * madde['miktar'] # gram maliyeti
+            
+            print(f"Toplam Gramaj: {r['toplam_gramaj']}g")
+            print(f"Toplam Maliyet: {t_maliyet:.2f} TL")
+            print(f"100g için Enerji: { (t_enerji/(r['toplam_gramaj']/100)):.1f} kcal")
+            print(f"100g için Şeker: { (t_seker/(r['toplam_gramaj']/100)):.1f} g")
+            print("-" * 30)
+        except:
+            print("Geçersiz seçim.")
 
     def tum_malzemeleri_listele(self):
-        if not self.malzemeler:
-            print("\nHenüz malzeme eklenmemiş.")
-            return
+        header = f"{'Malzeme':<15} | {'Enerji':<6} | {'Şeker':<6} | {'Maliyet':<8} | {'Döviz'}"
+        print("\n" + header + "\n" + "-"*len(header))
+        for isim, v in self.malzemeler.items():
+            print(f"{isim.capitalize():<15} | {v['besin']['enerji']:<6.1f} | {v['besin']['seker']:<6.1f} | {v['maliyet']['fiyat']:<8.2f} | {v['maliyet']['birim']}")
 
-        # Tablo başlığı
-        header = f"{'Malzeme Adı':<15} | {'Enerji':<6} | {'Yağ':<5} | {'Karb.':<5} | {'Şeker':<5} | {'Lif':<5} | {'Prot.':<5} | {'Tuz':<5} | {'Maliyet':<8} | {'Döviz':<5} | {'TL Karş.'}"
-        print("\n" + "="*len(header))
-        print(header)
-        print("-" * len(header))
-        
-        for isim, veri in self.malzemeler.items():
-            b = veri["besin"]
-            m = veri["maliyet"]
-            guncel_tl = m["fiyat"] * self.kurlar.get(m["birim"], 1.0)
-            
-            row = (f"{isim.capitalize():<15} | {b['enerji']:<6.1f} | {b['yag']:<5.1f} | "
-                   f"{b['karb']:<5.1f} | {b['seker']:<5.1f} | {b['lif']:<5.1f} | "
-                   f"{b['protein']:<5.1f} | {b['tuz']:<5.1f} | {m['fiyat']:<8.2f} | "
-                   f"{m['birim']:<5} | {guncel_tl:<10.2f}")
-            print(row)
-        print("="*len(header))
-
-# Ana Program Döngüsü
 def menu():
     sistem = GidaYonetimi()
     while True:
-        print("\n--- COCOA WORKS YÖNETİM PANELİ ---")
-        print("1. Yeni Malzeme Ekle")
-        print("2. Mevcut Malzemeyi Düzenle")
-        print("3. Tüm Malzemeleri Görüntüle (Tablo)")
-        print("4. Döviz Kurlarını Güncelle")
-        print("5. Çıkış")
+        print("\n--- COCOA WORKS ERP V2 ---")
+        print("1. Malzeme Ekle")
+        print("2. Malzeme Düzenle")
+        print("3. Tüm Malzemeleri Görüntüle")
+        print("4. YENİ REÇETE OLUŞTUR")
+        print("5. KAYITLI REÇETELERİ GÖRÜNTÜLE")
+        print("6. Döviz Kurlarını Güncelle")
+        print("7. Çıkış")
         
-        secim = input("Seçiminiz: ")
-        
-        try:
-            if secim == "1":
-                sistem.malzeme_ekle()
-            elif secim == "2":
-                sistem.malzeme_duzenle()
-            elif secim == "3":
-                sistem.tum_malzemeleri_listele()
-            elif secim == "4":
-                sistem.kur_guncelle()
-            elif secim == "5":
-                print("Sistemden çıkılıyor... İyi çalışmalar!")
-                break
-            else:
-                print("Geçersiz seçim!")
-        except Exception as e:
-            print(f"Bir hata oluştu: {e}. Lütfen sayısal değerleri doğru girdiğinizden emin olun.")
+        secim = input("Seçim: ")
+        if secim == "1": sistem.malzeme_ekle()
+        elif secim == "2": sistem.malzeme_duzenle()
+        elif secim == "3": sistem.tum_malzemeleri_listele()
+        elif secim == "4": sistem.recete_olustur()
+        elif secim == "5": sistem.recete_goruntule()
+        elif secim == "6": sistem.kur_guncelle()
+        elif secim == "7": break
 
 if __name__ == "__main__":
     menu()
