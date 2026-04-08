@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Cocoa Works ERP V3", layout="wide")
+st.set_page_config(page_title="Cocoa Works ERP V4", layout="wide")
 
 # Veri Yönetimi
 def verileri_yukle():
@@ -28,21 +28,19 @@ if 'gecici_icerik' not in st.session_state:
 
 data = st.session_state.data
 
-st.title("🍫 Cocoa Works Yönetim Paneli V3")
+st.title("🍫 Cocoa Works Yönetim Paneli V4")
 menu = st.sidebar.radio("İşlem Seçin", 
     ["📦 Malzeme Listesi & Düzenle", "📝 Yeni Malzeme Ekle", "🧪 Reçete Hazırla", "📋 Kayıtlı Reçeteler", "💱 Döviz Kurları"])
 
-# --- 1. MALZEME LİSTESİ & DÜZENLE ---
+# --- 1. MALZEME LİSTESİ & DÜZENLE --- (Aynı şekilde devam ediyor)
 if menu == "📦 Malzeme Listesi & Düzenle":
     st.header("Malzeme Envanteri")
     if data["malzemeler"]:
         df = pd.DataFrame.from_dict(data["malzemeler"], orient='index')
         st.dataframe(df, use_container_width=True)
-        
         st.divider()
         st.subheader("🔍 Hızlı Düzenle")
         duzenlenecek = st.selectbox("Düzenlemek istediğiniz malzemeyi seçin", ["Seçiniz..."] + list(data["malzemeler"].keys()))
-        
         if duzenlenecek != "Seçiniz...":
             m_eski = data["malzemeler"][duzenlenecek]
             with st.form("duzenle_form"):
@@ -56,89 +54,127 @@ if menu == "📦 Malzeme Listesi & Düzenle":
                 n_tuz = c1.number_input("Tuz (g)", value=float(m_eski['tuz']))
                 n_fiyat = c2.number_input("Fiyat", value=float(m_eski['fiyat']))
                 n_birim = c3.selectbox("Birim", ["TL", "USD", "EUR"], index=["TL", "USD", "EUR"].index(m_eski['birim']))
-                
                 if st.form_submit_button("Güncelle"):
-                    data["malzemeler"][duzenlenecek] = {
-                        "enerji": n_enerji, "yag": n_yag, "karb": n_karb, "seker": n_seker,
-                        "lif": n_lif, "protein": n_protein, "tuz": n_tuz, "fiyat": n_fiyat, "birim": n_birim
-                    }
+                    data["malzemeler"][duzenlenecek] = {"enerji": n_enerji, "yag": n_yag, "karb": n_karb, "seker": n_seker, "lif": n_lif, "protein": n_protein, "tuz": n_tuz, "fiyat": n_fiyat, "birim": n_birim}
                     verileri_kaydet(data)
                     st.success("Güncellendi!")
                     st.rerun()
-    else:
-        st.info("Henüz malzeme yok.")
 
-# --- 2. YENİ MALZEME EKLE ---
+# --- 2. YENİ MALZEME EKLE --- (Aynı şekilde devam ediyor)
 elif menu == "📝 Yeni Malzeme Ekle":
     st.header("Yeni Malzeme Girişi")
     with st.form("yeni_malzeme"):
         ad = st.text_input("Malzeme Adı").lower().strip()
         c1, c2, c3 = st.columns(3)
-        en = c1.number_input("Enerji", min_value=0.0)
-        yg = c2.number_input("Yağ", min_value=0.0)
-        kb = c3.number_input("Karb.", min_value=0.0)
-        sk = c1.number_input("Şeker", min_value=0.0)
-        lf = c2.number_input("Lif", min_value=0.0)
-        pr = c3.number_input("Protein", min_value=0.0)
-        tz = c1.number_input("Tuz", min_value=0.0)
-        fj = c2.number_input("Fiyat (kg/lt)", min_value=0.0)
-        br = c3.selectbox("Para Birimi", ["TL", "USD", "EUR"])
-        
+        en, yg, kb = c1.number_input("Enerji"), c2.number_input("Yağ"), c3.number_input("Karb.")
+        sk, lf, pr = c1.number_input("Şeker"), c2.number_input("Lif"), c3.number_input("Protein")
+        tz, fj, br = c1.number_input("Tuz"), c2.number_input("Fiyat (kg/lt)"), c3.selectbox("Para Birimi", ["TL", "USD", "EUR"])
         if st.form_submit_button("Sisteme Ekle"):
             if ad:
                 data["malzemeler"][ad] = {"enerji":en,"yag":yg,"karb":kb,"seker":sk,"lif":lf,"protein":pr,"tuz":tz,"fiyat":fj,"birim":br}
                 verileri_kaydet(data)
                 st.success("Kaydedildi!")
-            else: st.error("İsim giriniz!")
 
-# --- 3. REÇETE HAZIRLA ---
+# --- 3. REÇETE HAZIRLA (GELİŞTİRİLMİŞ) ---
 elif menu == "🧪 Reçete Hazırla":
-    st.header("Reçete Hazırlama & Anlık Hesaplama")
-    if not data["malzemeler"]: st.warning("Malzeme ekleyin!")
+    st.header("Reçete Hazırlama & Ar-Ge Analizi")
+    
+    if not data["malzemeler"]: 
+        st.warning("Malzeme ekleyin!")
     else:
         r_ad = st.text_input("Ürün Adı")
-        col_m, col_g = st.columns([2, 1])
+        
+        # Giriş Tipi Seçimi (Gram mı Yüzde mi?)
+        giris_tipi = st.radio("Miktar Giriş Tipi", ["Gram Bazlı", "Yüzde (%) Bazlı"], horizontal=True)
+        
+        col_m, col_v = st.columns([2, 1])
         m_sec = col_m.selectbox("Malzeme", list(data["malzemeler"].keys()))
-        m_gram = col_g.number_input("Miktar (Gram)", min_value=0.0, step=1.0)
         
+        if giris_tipi == "Gram Bazlı":
+            m_miktar = col_v.number_input("Miktar (Gram)", min_value=0.0)
+        else:
+            m_miktar = col_v.number_input("Miktar (%)", min_value=0.0, max_value=100.0)
+            st.caption("Not: Yüzde bazlı giriş yaparken toplam ağırlığı 100g kabul eder veya sonradan çarpanla büyütebilirsiniz.")
+
         if st.button("Listeye Ekle"):
-            st.session_state.gecici_icerik.append({"isim": m_sec, "miktar": m_gram})
-        
+            st.session_state.gecici_icerik.append({"isim": m_sec, "miktar": m_miktar, "tip": giris_tipi})
+
         if st.session_state.gecici_icerik:
-            temp_df = pd.DataFrame(st.session_state.gecici_icerik)
-            total_g = temp_df['miktar'].sum()
-            temp_df['% (Yüzde)'] = (temp_df['miktar'] / total_g * 100).round(2) if total_g > 0 else 0
-            st.table(temp_df)
+            # Reçete Tablosu Oluşturma
+            df_recete = pd.DataFrame(st.session_state.gecici_icerik)
+            
+            # Yüzde ve Gram dönüşümlerini hesapla (Basit mantık: Karışık girilirse gramı baz al)
+            total_g = df_recete[df_recete['tip'] == "Gram Bazlı"]['miktar'].sum()
+            total_p = df_recete[df_recete['tip'] == "Yüzde (%) Bazlı"]['miktar'].sum()
+            
+            st.subheader("📋 Mevcut Reçete Taslağı")
+            st.table(df_recete)
             
             if st.button("🗑️ Listeyi Temizle"):
                 st.session_state.gecici_icerik = []
                 st.rerun()
 
             st.divider()
-            if st.button("🧮 HESAPLA (Kaydetmeden Gör)"):
-                t_en, t_sk, t_mal = 0, 0, 0
+            
+            # --- HESAPLAMA MODÜLÜ ---
+            if st.button("🧮 ANALİZ ET (Hesapla)"):
+                # Gıda mühendisi için detaylı analiz
+                analiz = {"enerji":0, "yag":0, "karb":0, "seker":0, "lif":0, "protein":0, "tuz":0, "maliyet":0}
+                t_gram = 0
+                
+                # Önce toplam gramı bulalım
+                for kalem in st.session_state.gecici_icerik:
+                    if kalem['tip'] == "Gram Bazlı": t_gram += kalem['miktar']
+                    else: t_gram += kalem['miktar'] # Yüzdeyi de gram gibi düşün (100g bazlı)
+
                 for kalem in st.session_state.gecici_icerik:
                     m = data["malzemeler"][kalem["isim"]]
-                    oran = kalem["miktar"] / 100
-                    t_en += m["enerji"] * oran
-                    t_sk += m["seker"] * oran
+                    mikt = kalem["miktar"]
+                    oran = mikt / 100
+                    
+                    analiz["enerji"] += m["enerji"] * oran
+                    analiz["yag"] += m["yag"] * oran
+                    analiz["karb"] += m["karb"] * oran
+                    analiz["seker"] += m["seker"] * oran
+                    analiz["lif"] += m["lif"] * oran
+                    analiz["protein"] += m["protein"] * oran
+                    analiz["tuz"] += m["tuz"] * oran
+                    
                     kur = data["kurlar"].get(m["birim"], 1.0)
-                    t_mal += (m["fiyat"] * kur / 1000) * kalem["miktar"]
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Toplam Ağırlık", f"{total_g}g")
-                c2.metric("100g Enerji", f"{(t_en/(total_g/100)):.1f} kcal")
-                c3.metric("Toplam Maliyet", f"{t_mal:.2f} TL")
+                    analiz["maliyet"] += (m["fiyat"] * kur / 1000) * mikt
 
-            if st.button("💾 REÇETEYİ KAYDET"):
+                # Sonuç Gösterimi
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Toplam Ağırlık", f"{t_gram:.1f} g")
+                c2.metric("Toplam Maliyet", f"{analiz['maliyet']:.2f} TL")
+                c3.metric("Birim Maliyet (kg)", f"{(analiz['maliyet']/t_gram*1000):.2f} TL")
+
+                st.subheader("🧪 100g İçin Besin Değerleri Tablosu")
+                # 100 grama normalize etme
+                norm_f = t_gram / 100
+                besin_df = pd.DataFrame({
+                    "Besin Öğesi": ["Enerji (kcal)", "Yağ (g)", "Karb. (g)", "Şeker (g)", "Lif (g)", "Protein (g)", "Tuz (g)"],
+                    "Değer (100g için)": [
+                        round(analiz["enerji"]/norm_f, 2),
+                        round(analiz["yag"]/norm_f, 2),
+                        round(analiz["karb"]/norm_f, 2),
+                        round(analiz["seker"]/norm_f, 2),
+                        round(analiz["lif"]/norm_f, 2),
+                        round(analiz["protein"]/norm_f, 2),
+                        round(analiz["tuz"]/norm_f, 2)
+                    ]
+                })
+                st.dataframe(besin_df, use_container_width=True)
+
+            if st.button("💾 REÇETEYİ ARŞİVLE"):
                 if r_ad:
                     data["receteler"][r_ad] = st.session_state.gecici_icerik
                     verileri_kaydet(data)
-                    st.success("Reçete Arşive Eklendi!")
+                    st.success(f"'{r_ad}' başarıyla kaydedildi!")
                     st.session_state.gecici_icerik = []
-                else: st.error("Reçete ismi eksik!")
+                else: st.error("Lütfen ürün adı girin!")
 
-# --- 4. KAYITLI REÇETELER ---
+# --- DİĞER SEKMELER (Aynı Şekilde Devam) ---
 elif menu == "📋 Kayıtlı Reçeteler":
     st.header("Reçete Arşivi")
     if data["receteler"]:
@@ -150,15 +186,12 @@ elif menu == "📋 Kayıtlı Reçeteler":
             st.rerun()
     else: st.info("Reçete yok.")
 
-# --- 5. DÖVİZ KURLARI ---
 elif menu == "💱 Döviz Kurları":
     st.header("Kur Ayarları")
-    # State üzerinden değerleri çekiyoruz ki hata vermesin
     usd_val = st.number_input("1 USD (TL)", value=float(data["kurlar"]["USD"]))
     eur_val = st.number_input("1 EUR (TL)", value=float(data["kurlar"]["EUR"]))
-    
     if st.button("Kurları Güncelle"):
         data["kurlar"]["USD"] = usd_val
         data["kurlar"]["EUR"] = eur_val
         verileri_kaydet(data)
-        st.success("Kurlar sisteme işlendi!")
+        st.success("Kurlar güncellendi!")
