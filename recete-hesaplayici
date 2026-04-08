@@ -1,75 +1,44 @@
 import streamlit as st
-import pandas as pd
 
-# Sayfa Ayarları
-st.set_page_config(page_title="Gıda Reçete Analizör", layout="centered")
+st.set_page_config(page_title="Gıda Hesaplayıcı", layout="centered")
 
 st.title("🧪 Gıda Reçete & Maliyet Hesaplayıcı")
 
-# 1. Hammadde Hafızası (Session State kullanarak tarayıcıda tutuyoruz)
-if 'df_materials' not in st.session_state:
-    # Başlangıç örnek verileri
-    data = {
-        "Hammadde": ["Yağ", "Şeker", "Su"],
-        "Enerji (kcal)": [900, 400, 0],
-        "Yağ (g)": [100, 0, 0],
-        "Karb (g)": [0, 100, 0],
-        "Fiyat (TL/kg)": [120, 30, 0.5]
+# Basit Veri Sözlüğü (Hafıza)
+if 'materials' not in st.session_state:
+    st.session_state.materials = {
+        "Yağ": {"kcal": 900, "fiyat": 100},
+        "Şeker": {"kcal": 400, "fiyat": 10}
     }
-    st.session_state.df_materials = pd.DataFrame(data)
 
-# --- YAN MENÜ: Hammadde Yönetimi ---
-st.sidebar.header("📦 Hammadde Listesi")
-with st.sidebar.expander("Yeni Hammadde Ekle"):
-    new_name = st.text_input("Adı")
-    new_cal = st.number_input("Enerji", value=0.0)
-    new_fat = st.number_input("Yağ", value=0.0)
-    new_carb = st.number_input("Karb", value=0.0)
-    new_price = st.number_input("Fiyat (TL/kg)", value=0.0)
-    
+# Sol Panel: Hammadde Ekleme
+with st.sidebar:
+    st.header("📦 Malzeme Ekle")
+    name = st.text_input("Malzeme Adı")
+    cal = st.number_input("Kalori (kcal/100g)", value=0.0)
+    price = st.number_input("Fiyat (TL/kg)", value=0.0)
     if st.button("Listeye Ekle"):
-        new_row = pd.DataFrame([[new_name, new_cal, new_fat, new_carb, new_price]], 
-                               columns=st.session_state.df_materials.columns)
-        st.session_state.df_materials = pd.concat([st.session_state.df_materials, new_row], ignore_index=True)
-        st.rerun()
+        st.session_state.materials[name] = {"kcal": cal, "fiyat": price}
+        st.success(f"{name} eklendi!")
 
-st.sidebar.write("Mevcut Liste:")
-st.sidebar.dataframe(st.session_state.df_materials, hide_index=True)
+# Ana Panel: Reçete
+st.subheader("📋 Reçete Oluştur")
+mats = list(st.session_state.materials.keys())
+selected = st.multiselect("Malzemeleri Seç", mats)
 
-# --- ANA SAYFA: Reçete Oluşturma ---
-st.subheader("📋 Yeni Reçete")
-selected_mats = st.multiselect("Hammaddeleri Seçin", st.session_state.df_materials["Hammadde"].tolist())
-
-recipe_inputs = {}
+total_cal = 0
+total_cost = 0
 total_pct = 0
 
-if selected_mats:
-    for mat in selected_mats:
-        pct = st.number_input(f"{mat} Oranı (%)", min_value=0.0, max_value=100.0, step=1.0)
-        recipe_inputs[mat] = pct
+if selected:
+    for m in selected:
+        pct = st.number_input(f"{m} Oranı (%)", min_value=0.0, max_value=100.0)
         total_pct += pct
-    
-    st.info(f"Toplam Oran: %{total_pct}")
+        total_cal += (st.session_state.materials[m]["kcal"] * (pct / 100))
+        total_cost += (st.session_state.materials[m]["fiyat"] * (pct / 100))
 
     if st.button("HESAPLA"):
         if total_pct != 100:
-            st.error("Toplam oran %100 olmalıdır!")
+            st.error(f"Toplam oran %100 olmalı! (Şu an: %{total_pct})")
         else:
-            # Hesaplama İşlemi
-            res_energy, res_fat, res_carb, res_price = 0, 0, 0, 0
-            
-            for mat, pct in recipe_inputs.items():
-                row = st.session_state.df_materials[st.session_state.df_materials["Hammadde"] == mat].iloc[0]
-                ratio = pct / 100
-                res_energy += row["Enerji (kcal)"] * ratio
-                res_fat += row["Yağ (g)"] * ratio
-                res_carb += row["Karb (g)"] * ratio
-                res_price += row["Fiyat (TL/kg)"] * ratio
-            
-            # Sonuçları Göster
-            st.success("### Analiz Sonuçları (100g için)")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Enerji", f"{round(res_energy,1)} kcal")
-            c2.metric("Yağ", f"{round(res_fat,1)} g")
-            c3.metric("Karb", f"{round(res_carb,1)} g")
-            c4.metric("Maliyet", f"{round(res_price,2)} TL")
+            st.success(f"### Sonuç (100g için)\n**Enerji:** {total_cal} kcal  \n**Maliyet:** {total_cost} TL")
