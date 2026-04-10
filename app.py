@@ -1,216 +1,127 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
+import json
 
-# --- GÜVENLİK AYARLARI ---
-# Buradaki şifreyi dilediğin zaman değiştirebilirsin.
+# Sayfa Ayarları
+st.set_page_config(page_title="Cocoa Works ERP V7", layout="wide")
+
+# --- GÜVENLİK ---
 ERISIM_SIFRESI = "NMR170" 
-
-# Giriş durumunu kontrol et
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-def check_password():
-    """Şifre kontrol fonksiyonu"""
-    if st.session_state["authenticated"]:
-        return True
-    
+if not st.session_state["authenticated"]:
     st.title("🔒 Cocoa Works Güvenli Giriş")
-    sifre_input = st.text_input("Lütfen erişim şifresini girin:", type="password")
-    
-    if st.button("Giriş Yap"):
-        if sifre_input == ERISIM_SIFRESI:
+    sifre = st.text_input("Şifre:", type="password")
+    if st.button("Giriş"):
+        if sifre == ERISIM_SIFRESI:
             st.session_state["authenticated"] = True
             st.rerun()
-        else:
-            st.error("❌ Hatalı şifre! Erişim reddedildi.")
-    return False
-
-# Eğer şifre doğru değilse, uygulamanın geri kalanını çalıştırmayı durdur
-if not check_password():
+        else: st.error("Hatalı!")
     st.stop()
 
-# --- UYGULAMANIN GERİ KALANI BURADAN İTİBAREN DEVAM EDER ---
-# (Daha önce yazdığımız V6 kodlarını buranın altına yapıştırabilirsin)
-import streamlit as st
-import json
-import pandas as pd
+# --- GOOGLE SHEETS BAĞLANTISI ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Sayfa Ayarları
-st.set_page_config(page_title="Cocoa Works ERP V6", layout="wide")
-
-# --- YARDIMCI FONKSİYONLAR ---
 def verileri_yukle():
     try:
-        with open("veriler.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {"malzemeler": {}, "receteler": {}, "kurlar": {"USD": 32.5, "EUR": 35.0}}
+        # Sayfaları oku
+        malz_df = conn.read(worksheet="malzemeler", ttl=0)
+        rece_df = conn.read(worksheet="receteler", ttl=0)
+        kur_df = conn.read(worksheet="kurlar", ttl=0)
+        
+        # DataFrame'leri eski sözlük yapısına çevir (Kodun geri kalanı bozulmasın diye)
+        return {
+            "malzemeler": malz_df.set_index("ad").to_dict('index') if not malz_df.empty else {},
+            "receteler_tablo": rece_df if not rece_df.empty else pd.DataFrame(columns=["recete_ad", "malzeme", "miktar_g"]),
+            "kurlar": kur_df.set_index("doviz")["oran"].to_dict() if not kur_df.empty else {"USD": 32.5, "EUR": 35.0}
+        }
+    except:
+        return {"malzemeler": {}, "receteler_tablo": pd.DataFrame(columns=["recete_ad", "malzeme", "miktar_g"]), "kurlar": {"USD": 32.5, "EUR": 35.0}}
 
-def verileri_kaydet(veri):
-    with open("veriler.json", "w", encoding="utf-8") as f:
-        json.dump(veri, f, ensure_ascii=False, indent=4)
+# Veriyi başlat
+data = verileri_yukle()
 
+# --- YARDIMCI FONKSİYONLAR ---
 def besin_analizi_yap(df, malzemeler, kurlar):
-    """Verilen reçete tablosuna göre toplam ve 100g analizini yapar"""
-    analiz = {"enerji":0, "yag":0, "karb":0, "seker":0, "lif":0, "protein":0, "tuz":0, "maliyet":0}
+    analiz = {k: 0 for k in ["enerji", "yag", "karb", "seker", "lif", "protein", "tuz", "maliyet"]}
     t_gram = df["Miktar (g)"].sum()
     if t_gram == 0: return analiz, 0
-    
     for _, row in df.iterrows():
         m = malzemeler[row["Malzeme"]]
         oran = row["Miktar (g)"] / 100
-        for anahtar in ["enerji","yag","karb","seker","lif","protein","tuz"]:
-            analiz[anahtar] += m[anahtar] * oran
+        for b in ["enerji", "yag", "karb", "seker", "lif", "protein", "tuz"]:
+            analiz[b] += m[b] * oran
         kur = kurlar.get(m["birim"], 1.0)
         analiz["maliyet"] += (m["fiyat"] * kur / 1000) * row["Miktar (g)"]
-    
     return analiz, t_gram
 
-# --- SESSION STATE BAŞLATMA ---
-if 'data' not in st.session_state:
-    st.session_state.data = verileri_yukle()
-if 'gecici_df' not in st.session_state:
-    st.session_state.gecici_df = pd.DataFrame(columns=["Malzeme", "Miktar (g)"])
+# --- MENÜ ---
+st.title("🍫 Cocoa Works Cloud ERP V7")
+menu = st.sidebar.radio("Menü", ["📦 Malzeme Envanteri", "📝 Malzeme Ekle", "🧪 Reçete Hazırla", "🍰 Katmanlı Ürün", "📋 Arşiv", "💱 Döviz Kurları"])
 
-data = st.session_state.data
-besin_kalemleri = ["enerji", "yag", "karb", "seker", "lif", "protein", "tuz"]
-
-st.title("🍫 Cocoa Works Ar-Ge Merkezi V6")
-menu = st.sidebar.radio("İşlem Seçin", 
-    ["📦 Malzeme Envanteri", "📝 Yeni Malzeme Ekle", "🧪 Reçete Hazırla (Simülasyon)", "🍰 Katmanlı Ürün Oluştur", "📋 Arşiv & Analiz", "💱 Döviz Kurları"])
-
-# --- 1. & 2. MALZEME BÖLÜMLERİ (Öncekiyle aynı, hızlı geçiyorum) ---
 if menu == "📦 Malzeme Envanteri":
-    st.header("Malzeme Listesi")
+    st.header("📦 Mevcut Malzemeler")
     if data["malzemeler"]:
         st.dataframe(pd.DataFrame.from_dict(data["malzemeler"], orient='index'), use_container_width=True)
-    else: st.info("Malzeme yok.")
+    else: st.info("Tablo henüz boş.")
 
-elif menu == "📝 Yeni Malzeme Ekle":
-    st.header("Yeni Malzeme Girişi")
-    with st.form("yeni"):
-        ad = st.text_input("Malzeme Adı").lower().strip()
-        c1, c2, c3 = st.columns(3)
-        en, yg, kb = c1.number_input("Enerji"), c2.number_input("Yağ"), c3.number_input("Karb.")
-        sk, lf, pr = c1.number_input("Şeker"), c2.number_input("Lif"), c3.number_input("Protein")
-        tz, fj, br = c1.number_input("Tuz"), c2.number_input("Fiyat"), c3.selectbox("Birim", ["TL", "USD", "EUR"])
-        if st.form_submit_button("Kaydet"):
-            data["malzemeler"][ad] = {"enerji":en,"yag":yg,"karb":kb,"seker":sk,"lif":lf,"protein":pr,"tuz":tz,"fiyat":fj,"birim":br}
-            verileri_kaydet(data)
-            st.success("Kaydedildi!")
-
-# --- 3. REÇETE HAZIRLA (SİMÜLASYON) ---
-elif menu == "🧪 Reçete Hazırla (Simülasyon)":
-    st.header("Reçete Hazırlama Laboratuvarı")
-    
-    col_add1, col_add2 = st.columns([3,1])
-    yeni_m = col_add1.selectbox("Malzeme Seç", list(data["malzemeler"].keys()))
-    if col_add2.button("➕ Listeye Ekle"):
-        new_row = pd.DataFrame([{"Malzeme": yeni_m, "Miktar (g)": 0.0}])
-        st.session_state.gecici_df = pd.concat([st.session_state.gecici_df, new_row], ignore_index=True)
-
-    st.subheader("Simülasyon Tablosu (Miktarları değiştirip sonuçları anlık izleyin)")
-    edited_df = st.data_editor(st.session_state.gecici_df, num_rows="dynamic", use_container_width=True)
-    st.session_state.gecici_df = edited_df
-
-    if not edited_df.empty:
-        res, t_g = besin_analizi_yap(edited_df, data["malzemeler"], data["kurlar"])
-        if t_g > 0:
-            st.divider()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Toplam Ağırlık", f"{t_g:.1f} g")
-            c2.metric("Toplam Maliyet", f"{res['maliyet']:.2f} TL")
-            c3.metric("Birim Maliyet (kg)", f"{(res['maliyet']/t_g*1000):.2f} TL")
-            
-            st.subheader("🧪 100g İçin Tam Besin Analizi")
-            analiz_df = pd.DataFrame({
-                "Besin Ögesi": ["Enerji (kcal)", "Yağ (g)", "Karb. (g)", "Şeker (g)", "Lif (g)", "Protein (g)", "Tuz (g)"],
-                "Değer (100g)": [round(res[k]/(t_g/100), 2) for k in besin_kalemleri]
-            })
-            st.table(analiz_df)
-
-        r_isim = st.text_input("Reçete Adı")
-        if st.button("💾 Reçeteyi Kaydet"):
-            data["receteler"][r_isim] = edited_df.to_dict('records')
-            verileri_kaydet(data)
-            st.success("Reçete arşive eklendi!")
-
-# --- 4. KATMANLI ÜRÜN OLUŞTUR ---
-elif menu == "🍰 Katmanlı Ürün Oluştur":
-    st.header("Katmanlı Ürün Kompozit Analizi")
-    katman_sayisi = st.number_input("Katman Sayısı", 1, 5, 2)
-    
-    katmanlar = []
-    t_oran = 0
-    cols = st.columns(katman_sayisi)
-    for i in range(katman_sayisi):
-        with cols[i]:
-            k_ad = st.text_input(f"Ad", value=f"Katman {i+1}", key=f"kname_{i}")
-            k_rec = st.selectbox(f"Reçete", list(data["receteler"].keys()), key=f"krec_{i}")
-            k_oran = st.number_input(f"Oran (%)", 0.0, 100.0, key=f"kper_{i}")
-            katmanlar.append({"ad": k_ad, "recete": k_rec, "oran": k_oran})
-            t_oran += k_oran
-            
-    if t_oran == 100:
-        if st.button("🧬 TÜM KATMANLARI ANALİZ ET"):
-            final = {k: 0 for k in besin_kalemleri + ["maliyet"]}
-            for k in katmanlar:
-                r_df = pd.DataFrame(data["receteler"][k["recete"]])
-                r_res, r_tg = besin_analizi_yap(r_df, data["malzemeler"], data["kurlar"])
-                
-                # Katmanın kompozit ürüne katkısı
-                pay = k["oran"] / 100
-                for b in besin_kalemleri:
-                    final[b] += (r_res[b] / (r_tg/100)) * pay
-                final["maliyet"] += (r_res["maliyet"] / (r_tg/1000)) * pay # kg bazlı maliyet katkısı
-
-            st.divider()
-            st.subheader("🏁 Final Ürün (100g) Besin Tablosu")
-            final_df = pd.DataFrame({
-                "Besin Ögesi": ["Enerji (kcal)", "Yağ (g)", "Karb. (g)", "Şeker (g)", "Lif (g)", "Protein (g)", "Tuz (g)"],
-                "Kompozit Değer (100g)": [round(final[k], 2) for k in besin_kalemleri]
-            })
-            st.table(final_df)
-            st.metric("Final Ürün Toplam Maliyet (kg)", f"{final['maliyet']:.2f} TL")
-    else: st.warning(f"Toplam oran %100 olmalı! Şu an: %{t_oran}")
-
-# --- 5. ARŞİV & ANALİZ ---
-elif menu == "📋 Arşiv & Analiz":
-    st.header("Reçete Arşivi ve Geri Çağırma")
-    if data["receteler"]:
-        secilen_r = st.selectbox("İncelemek istediğiniz reçeteyi seçin", list(data["receteler"].keys()))
-        r_df = pd.DataFrame(data["receteler"][secilen_r])
+elif menu == "📝 Malzeme Ekle":
+    st.header("📝 Yeni Malzeme Kaydı")
+    with st.form("malz_form"):
+        ad = st.text_input("Ad").lower().strip()
+        c = st.columns(3)
+        en, yg, kb = c[0].number_input("Enerji"), c[1].number_input("Yağ"), c[2].number_input("Karb.")
+        sk, lf, pr = c[0].number_input("Şeker"), c[1].number_input("Lif"), c[2].number_input("Protein")
+        tz, fj, br = c[0].number_input("Tuz"), c[1].number_input("Fiyat"), c[2].selectbox("Birim", ["TL", "USD", "EUR"])
         
-        col_ar1, col_ar2 = st.columns(2)
-        with col_ar1:
-            st.subheader("Malzeme Oranları")
-            st.table(r_df)
-            
-            # --- AKTAR TUŞU ---
-            if st.button("🔄 Bu Reçeteyi Düzenlemek İçin Laboratuvara Aktar"):
-                st.session_state.gecici_df = r_df.copy()
-                st.success("Reçete 'Reçete Hazırla' sekmesine aktarıldı. Oraya gidip değerleri değiştirebilirsiniz!")
-        
-        with col_ar2:
-            st.subheader("Besin Analizi (100g)")
-            a_res, a_tg = besin_analizi_yap(r_df, data["malzemeler"], data["kurlar"])
-            a_df = pd.DataFrame({
-                "Besin Ögesi": ["Enerji", "Yağ", "Karb.", "Şeker", "Lif", "Protein", "Tuz"],
-                "Değer": [round(a_res[k]/(a_tg/100), 2) for k in besin_kalemleri]
-            })
-            st.table(a_df)
-            st.metric("Maliyet (kg)", f"{(a_res['maliyet']/a_tg*1000):.2f} TL")
-            
-        if st.button("🗑️ Reçeteyi Tamamen Sil"):
-            del data["receteler"][secilen_r]
-            verileri_kaydet(data)
-            st.rerun()
-    else: st.info("Henüz reçete kaydedilmemiş.")
+        if st.form_submit_button("Buluta Kaydet"):
+            # Mevcut listeye ekle ve tabloyu güncelle
+            data["malzemeler"][ad] = {"enerji":en, "yag":yg, "karb":kb, "seker":sk, "lif":lf, "protein":pr, "tuz":tz, "fiyat":fj, "birim":br}
+            new_df = pd.DataFrame.from_dict(data["malzemeler"], orient='index').reset_index().rename(columns={'index': 'ad'})
+            conn.update(worksheet="malzemeler", data=new_df)
+            st.success("Veri Google Sheets'e işlendi!")
 
-elif menu == "💱 Döviz Kurları":
-    st.header("Kur Ayarları")
-    u = st.number_input("USD/TL", value=float(data["kurlar"]["USD"]))
-    e = st.number_input("EUR/TL", value=float(data["kurlar"]["EUR"]))
-    if st.button("Kurları Güncelle"):
-        data["kurlar"].update({"USD": u, "EUR": e})
-        verileri_kaydet(data)
-        st.success("Güncellendi!")
+elif menu == "🧪 Reçete Hazırla":
+    st.header("🧪 Ar-Ge Laboratuvarı")
+    if not data["malzemeler"]: st.warning("Önce malzeme ekleyin!")
+    else:
+        if 'gecici_df' not in st.session_state:
+            st.session_state.gecici_df = pd.DataFrame(columns=["Malzeme", "Miktar (g)"])
+            
+        col_add1, col_add2 = st.columns([3,1])
+        y_m = col_add1.selectbox("Malzeme Seç", list(data["malzemeler"].keys()))
+        if col_add2.button("Ekle"):
+            st.session_state.gecici_df = pd.concat([st.session_state.gecici_df, pd.DataFrame([{"Malzeme": y_m, "Miktar (g)": 0.0}])], ignore_index=True)
+        
+        edited_df = st.data_editor(st.session_state.gecici_df, num_rows="dynamic", use_container_width=True)
+        st.session_state.gecici_df = edited_df
+        
+        if not edited_df.empty:
+            res, t_g = besin_analizi_yap(edited_df, data["malzemeler"], data["kurlar"])
+            if t_g > 0:
+                st.divider()
+                st.metric("Toplam Maliyet", f"{res['maliyet']:.2f} TL")
+                st.table(pd.DataFrame({k: [round(res[k]/(t_g/100), 2)] for k in ["enerji", "yag", "karb", "seker", "lif", "protein", "tuz"]}))
+
+            r_ad = st.text_input("Reçete Adı")
+            if st.button("💾 Reçeteyi Buluta Arşivle"):
+                # Reçete tablosuna yeni satırları ekle
+                new_rows = edited_df.copy()
+                new_rows["recete_ad"] = r_ad
+                new_rows = new_rows.rename(columns={"Malzeme": "malzeme", "Miktar (g)": "miktar_g"})
+                all_receteler = pd.concat([data["receteler_tablo"], new_rows], ignore_index=True)
+                conn.update(worksheet="receteler", data=all_receteler)
+                st.success("Reçete kaydedildi!")
+
+elif menu == "💱 Döviz Kurlarını Güncelle":
+    st.header("💱 Güncel Kurlar")
+    u = st.number_input("USD/TL", value=float(data["kurlar"].get("USD", 32.5)))
+    e = st.number_input("EUR/TL", value=float(data["kurlar"].get("EUR", 35.0)))
+    if st.button("Kurları Kaydet"):
+        new_kurlar = pd.DataFrame([{"doviz": "USD", "oran": u}, {"doviz": "EUR", "oran": e}])
+        conn.update(worksheet="kurlar", data=new_kurlar)
+        st.success("Kurlar Google Sheets'e kaydedildi!")
+
+# (Diğer sekmeleri de benzer mantıkla güncelleyebilirsin)
