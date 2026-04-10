@@ -122,6 +122,43 @@ elif menu == "🧪 Reçete Hazırla":
                     st.metric("Toplam Reçete", f"{tg:.1f} g")
 
                 st.divider()
+                st.subheader("📋 Excel'e Kaydet")
+                r_isim = st.text_input("Reçete Adı", "yeni_recete")
+                
+                # Excel Formatına Hazırlama (Tablo yapısı)
+                export_df = edit_df.copy()
+                export_df.insert(0, 'recete_ad', r_isim)
+                export_df = export_df.rename(columns={"Malzeme": "malzeme", "Miktar (g)": "miktar_g"})
+                
+                # Sütun isimleri olmadan sadece veriyi gösteriyoruz
+                st.info("Aşağıdaki satırları seçip kopyalayın ve Excel'deki 'receteler' sayfasının en altındaki boş hücreye sağ tıklayıp yapıştırın:")
+                st.dataframe(export_df, use_container_width=True)
+                
+                # Kopyalamayı kolaylaştırmak için ham tablo görüntüsü (Tab-separated)
+                tablo_metni = ""
+                for index, row in export_df.iterrows():
+                    tablo_metni += f"{row['recete_ad']}\t{row['malzeme']}\t{str(row['miktar_g']).replace('.', ',')}\n"
+                
+                st.text_area("Kopyalanacak Metin (Burayı seç, kopyala ve Excel'e yapıştır):", tablo_metni, height=150)
+                
+        # Tablo Düzenleme
+        edit_df = st.data_editor(st.session_state.gecici, num_rows="dynamic", use_container_width=True)
+        st.session_state.gecici = edit_df
+        
+        if not edit_df.empty:
+            res, tg = besin_analizi_yap(edit_df, data["malzemeler"], data["kurlar"])
+            if tg > 0:
+                st.divider()
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
+                    st.subheader("📊 Analiz (100g)")
+                    st.table(pd.DataFrame({k: [round(res[k]/(tg/100), 2)] for k in besin_kalemleri}))
+                with col_res2:
+                    st.subheader("💰 Maliyet")
+                    st.metric("KG Maliyeti", f"{(res['maliyet']/tg*1000):.2f} TL")
+                    st.metric("Toplam Reçete", f"{tg:.1f} g")
+
+                st.divider()
                 st.subheader("📋 Excel'e Kaydetme Formatı")
                 r_isim = st.text_input("Reçete Adı (Örn: Bitter_Gofret_V1)", "yeni_recete")
                 
