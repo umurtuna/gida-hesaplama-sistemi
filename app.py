@@ -93,7 +93,8 @@ if menu == "📦 Malzeme Envanteri":
 
 elif menu == "🧪 Reçete Hazırla":
     st.header("🧪 Reçete Hazırlama & Kopyalama İstasyonu")
-    if not data["malzemeler"]: st.error("Önce Excel'e malzeme girin.")
+    if not data["malzemeler"]: 
+        st.error("Önce Excel'e malzeme girin.")
     else:
         if 'gecici' not in st.session_state: 
             st.session_state.gecici = pd.DataFrame(columns=["Malzeme", "Miktar (g)"])
@@ -104,6 +105,47 @@ elif menu == "🧪 Reçete Hazırla":
         if c_add2.button("Listeye Ekle"):
             st.session_state.gecici = pd.concat([st.session_state.gecici, pd.DataFrame([{"Malzeme": m_sec, "Miktar (g)": 0.0}])], ignore_index=True)
         
+        # --- HATA ÇÖZÜMÜ: key="recete_editor" ekledik ---
+        edit_df = st.data_editor(
+            st.session_state.gecici, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="recete_editor" 
+        )
+        st.session_state.gecici = edit_df
+        
+        if not edit_df.empty:
+            res, tg = besin_analizi_yap(edit_df, data["malzemeler"], data["kurlar"])
+            if tg > 0:
+                st.divider()
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
+                    st.subheader("📊 Analiz (100g)")
+                    st.table(pd.DataFrame({k: [round(res[k]/(tg/100), 2)] for k in besin_kalemleri}))
+                with col_res2:
+                    st.subheader("💰 Maliyet")
+                    st.metric("KG Maliyeti", f"{(res['maliyet']/tg*1000):.2f} TL")
+                    st.metric("Toplam Reçete", f"{tg:.1f} g")
+
+                st.divider()
+                st.subheader("📋 Excel'e Kaydet")
+                r_isim = st.text_input("Reçete Adı", "yeni_recete")
+                
+                # Excel Formatına Hazırlama (Tablo yapısı)
+                export_df = edit_df.copy()
+                export_df.insert(0, 'recete_ad', r_isim)
+                export_df = export_df.rename(columns={"Malzeme": "malzeme", "Miktar (g)": "miktar_g"})
+                
+                # Excel'e tık diye yapışan format (Tab-separated)
+                tablo_metni = ""
+                for index, row in export_df.iterrows():
+                    # Sayıları Excel'in sevdiği virgüllü formata çeviriyoruz
+                    miktar_str = str(row['miktar_g']).replace('.', ',')
+                    tablo_metni += f"{row['recete_ad']}\t{row['malzeme']}\t{miktar_str}\n"
+                
+                st.info("Aşağıdaki kutunun içini seçip kopyalayın ve Excel'de 'receteler' sayfasının en altına yapıştırın:")
+                st.text_area("Kopyalanacak Metin (Ctrl+A -> Ctrl+C):", tablo_metni, height=150)
+                
         # Tablo Düzenleme
         edit_df = st.data_editor(st.session_state.gecici, num_rows="dynamic", use_container_width=True)
         st.session_state.gecici = edit_df
