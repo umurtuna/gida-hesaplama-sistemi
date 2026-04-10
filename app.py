@@ -92,14 +92,19 @@ if menu == "📦 Malzeme Envanteri":
     else: st.warning("Envanter listesi işlenemedi.")
 
 elif menu == "🧪 Reçete Hazırla":
-    st.header("🧪 Reçete Hazırlama (Ar-Ge)")
-    if not data["malzemeler"]: st.error("Malzeme bulunamadı.")
+    st.header("🧪 Reçete Hazırlama & Kopyalama İstasyonu")
+    if not data["malzemeler"]: st.error("Önce Excel'e malzeme girin.")
     else:
-        if 'gecici' not in st.session_state: st.session_state.gecici = pd.DataFrame(columns=["Malzeme", "Miktar (g)"])
-        m_sec = st.selectbox("Malzeme Seç", list(data["malzemeler"].keys()))
-        if st.button("Listeye Ekle"):
+        if 'gecici' not in st.session_state: 
+            st.session_state.gecici = pd.DataFrame(columns=["Malzeme", "Miktar (g)"])
+        
+        # Malzeme Ekleme Alanı
+        c_add1, c_add2 = st.columns([3,1])
+        m_sec = c_add1.selectbox("Malzeme Seç", list(data["malzemeler"].keys()))
+        if c_add2.button("Listeye Ekle"):
             st.session_state.gecici = pd.concat([st.session_state.gecici, pd.DataFrame([{"Malzeme": m_sec, "Miktar (g)": 0.0}])], ignore_index=True)
         
+        # Tablo Düzenleme
         edit_df = st.data_editor(st.session_state.gecici, num_rows="dynamic", use_container_width=True)
         st.session_state.gecici = edit_df
         
@@ -107,10 +112,31 @@ elif menu == "🧪 Reçete Hazırla":
             res, tg = besin_analizi_yap(edit_df, data["malzemeler"], data["kurlar"])
             if tg > 0:
                 st.divider()
-                st.subheader("📊 100g Besin Değerleri Analizi")
-                st.table(pd.DataFrame({k: [round(res[k]/(tg/100), 2)] for k in besin_kalemleri}))
-                st.metric("📦 KG Maliyeti", f"{(res['maliyet']/tg*1000):.2f} TL")
-                st.info("Not: Reçeteyi kaydetmek için Google Sheets 'receteler' sayfasına manuel ekleyiniz.")
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
+                    st.subheader("📊 Analiz (100g)")
+                    st.table(pd.DataFrame({k: [round(res[k]/(tg/100), 2)] for k in besin_kalemleri}))
+                with col_res2:
+                    st.subheader("💰 Maliyet")
+                    st.metric("KG Maliyeti", f"{(res['maliyet']/tg*1000):.2f} TL")
+                    st.metric("Toplam Reçete", f"{tg:.1f} g")
+
+                st.divider()
+                st.subheader("📋 Excel'e Kaydetme Formatı")
+                r_isim = st.text_input("Reçete Adı (Örn: Bitter_Gofret_V1)", "yeni_recete")
+                
+                # Excel Formatına Dönüştürme
+                # recete_ad, malzeme, miktar_g
+                export_df = edit_df.copy()
+                export_df.insert(0, 'recete_ad', r_isim)
+                export_df = export_df.rename(columns={"Malzeme": "malzeme", "Miktar (g)": "miktar_g"})
+                
+                csv_output = export_df.to_csv(index=False, header=False, sep=',').strip()
+                
+                st.info("Aşağıdaki satırları kopyalayıp Excel'deki 'receteler' sayfasının en altındaki boş satıra yapıştırın:")
+                st.code(csv_output, language="text")
+                st.caption("Not: Yapıştırdıktan sonra Excel'de 'Metni Sütunlara Dönüştür' diyerek virgülü seçebilirsiniz.")
+                
 
 elif menu == "🍰 Katmanlı Ürün":
     st.header("🍰 Katmanlı Ürün Analizi")
